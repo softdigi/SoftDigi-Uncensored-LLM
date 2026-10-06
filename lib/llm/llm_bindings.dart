@@ -53,6 +53,44 @@ typedef GeneratedCountDart = int Function(Pointer<Void> s);
 typedef LastErrorC = Pointer<Utf8> Function();
 typedef LastErrorDart = Pointer<Utf8> Function();
 
+typedef ReadModelInfoC =
+    Int32 Function(Pointer<Utf8> modelPath, Pointer<LlmModelInfoStruct> out);
+typedef ReadModelInfoDart =
+    int Function(Pointer<Utf8> modelPath, Pointer<LlmModelInfoStruct> out);
+
+typedef CountTokensC = Int32 Function(Pointer<Void> s, Pointer<Utf8> text);
+typedef CountTokensDart = int Function(Pointer<Void> s, Pointer<Utf8> text);
+
+/// Mirrors `llm_model_info` in llm_bridge.h. Field order and types must match.
+final class LlmModelInfoStruct extends Struct {
+  @Array(32)
+  external Array<Uint8> arch;
+
+  @Int32()
+  external int nLayer;
+
+  @Int32()
+  external int nHead;
+
+  @Int32()
+  external int nHeadKv;
+
+  @Int32()
+  external int nEmbd;
+
+  @Int32()
+  external int headDim;
+
+  @Int32()
+  external int nCtxTrain;
+
+  @Int32()
+  external int nVocab;
+
+  @Uint64()
+  external int sizeBytes;
+}
+
 class LlmBindings {
   LlmBindings._(DynamicLibrary lib)
     : probe = lib.lookupFunction<ProbeC, ProbeDart>('llm_probe'),
@@ -72,6 +110,12 @@ class LlmBindings {
       ),
       lastError = lib.lookupFunction<LastErrorC, LastErrorDart>(
         'llm_last_error',
+      ),
+      readModelInfo = lib.lookupFunction<ReadModelInfoC, ReadModelInfoDart>(
+        'llm_read_model_info',
+      ),
+      countTokens = lib.lookupFunction<CountTokensC, CountTokensDart>(
+        'llm_count_tokens',
       );
 
   final ProbeDart probe;
@@ -84,6 +128,8 @@ class LlmBindings {
   final SuggestThreadsDart suggestThreads;
   final GeneratedCountDart generatedCount;
   final LastErrorDart lastError;
+  final ReadModelInfoDart readModelInfo;
+  final CountTokensDart countTokens;
 
   static LlmBindings? _instance;
 

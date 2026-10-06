@@ -175,12 +175,18 @@ class _SmokeLogState extends State<_SmokeLog> {
       _log('UI max frame gap during generation: $maxGapMs ms');
 
       // 3b. Sustained generation without stop, for a steady tokens/sec figure.
-      final (reply3b, stats3b) = await _generate(worker,
-          question: 'Explain how a river forms, in detail.',
-          maxTokens: 200);
-      _log('sustained tokens=${stats3b.tokens} decode=${stats3b.decodeMs} ms '
-          '(${stats3b.tokensPerSecond.toStringAsFixed(2)} tok/s) end=${stats3b.end.name}');
-      _log('rss during sustained run: ${processRssMb()} MB, reply chars=${reply3b.length}');
+      final (reply3b, stats3b) = await _generate(
+        worker,
+        question: 'Explain how a river forms, in detail.',
+        maxTokens: 200,
+      );
+      _log(
+        'sustained tokens=${stats3b.tokens} decode=${stats3b.decodeMs} ms '
+        '(${stats3b.tokensPerSecond.toStringAsFixed(2)} tok/s) end=${stats3b.end.name}',
+      );
+      _log(
+        'rss during sustained run: ${processRssMb()} MB, reply chars=${reply3b.length}',
+      );
       _check('sustained generation produces text', reply3b.trim().isNotEmpty);
 
       // 4. Unload, then reload and generate again.

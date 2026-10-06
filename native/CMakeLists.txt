@@ -21,7 +21,7 @@ set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+fp16" CACHE STRING "" FORCE)
 add_subdirectory(third_party/llama.cpp)
 
 add_library(llm_bridge SHARED src/llm_bridge.cpp)
-target_include_directories(llm_bridge PRIVATE include third_party/llama.cpp/include)
+target_include_directories(llm_bridge PRIVATE include third_party/llama.cpp/include third_party/llama.cpp/ggml/include)
 target_link_libraries(llm_bridge PRIVATE llama)
 # Hide ggml/llama internals; only the extern "C" bridge symbols are exported.
 # max-page-size=16384 gives 16 KB ELF alignment for Android 15+ devices.
@@ -33,6 +33,6 @@ target_link_options(llm_bridge PRIVATE
 option(LLM_BRIDGE_SMOKE "Build the llm_bridge_smoke CLI for on-device testing" OFF)
 if(LLM_BRIDGE_SMOKE)
     add_executable(llm_bridge_smoke tests/llm_bridge_smoke.cpp src/llm_bridge.cpp)
-    target_include_directories(llm_bridge_smoke PRIVATE include third_party/llama.cpp/include)
+    target_include_directories(llm_bridge_smoke PRIVATE include third_party/llama.cpp/include third_party/llama.cpp/ggml/include)
     target_link_libraries(llm_bridge_smoke PRIVATE llama)
 endif()

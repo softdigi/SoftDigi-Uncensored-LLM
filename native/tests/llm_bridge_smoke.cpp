@@ -23,6 +23,19 @@ static void print_rss(const char * tag) {
 }
 
 int main(int argc, char ** argv) {
+    // --info <model.gguf>: print the architecture facts read from the metadata.
+    if (argc == 3 && std::strcmp(argv[1], "--info") == 0) {
+        llm_model_info info{};
+        if (llm_read_model_info(argv[2], &info) != LLM_OK) {
+            std::fprintf(stderr, "llm_read_model_info failed: %s\n", llm_last_error());
+            return 1;
+        }
+        std::printf("arch=%s layers=%d heads=%d kv_heads=%d embd=%d head_dim=%d ctx_train=%d vocab=%d size=%llu\n",
+                    info.arch, info.n_layer, info.n_head, info.n_head_kv, info.n_embd,
+                    info.head_dim, info.n_ctx_train, info.n_vocab,
+                    static_cast<unsigned long long>(info.size_bytes));
+        return 0;
+    }
     if (argc < 2) {
         std::fprintf(stderr, "usage: %s <model.gguf> [prompt] [max_tokens] [threads] [temperature]\n", argv[0]);
         return 2;

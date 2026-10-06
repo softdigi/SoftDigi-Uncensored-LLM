@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'llm_bindings.dart';
+import 'model_facts.dart';
 
 /// Thrown when the native bridge reports an error.
 class LlmException implements Exception {
@@ -54,6 +55,52 @@ class LlmEngine {
 
   /// Performance-core count for this device, capped at 4.
   static int suggestThreads() => LlmBindings.instance.suggestThreads();
+
+  /// Reads architecture metadata from a GGUF file. Throws LlmException if the
+  /// file is not a readable GGUF model. Loads only metadata and the tokenizer.
+  static ModelFacts readModelFacts(String path) {
+    final bindings = LlmBindings.instance;
+    final pathPtr = path.toNativeUtf8();
+    final out = calloc<LlmModelInfoStruct>();
+    try {
+      final rc = bindings.readModelInfo(pathPtr, out);
+      if (rc != 0) throw LlmException(_lastError(bindings));
+      final ref = out.ref;
+      final archBytes = <int>[];
+      for (var i = 0; i < 32; i++) {
+        final b = ref.arch[i];
+        if (b == 0) break;
+        archBytes.add(b);
+      }
+      return ModelFacts(
+        arch: utf8.decode(archBytes, allowMalformed: true),
+        nLayer: ref.nLayer,
+        nHead: ref.nHead,
+        nHeadKv: ref.nHeadKv,
+        nEmbd: ref.nEmbd,
+        headDim: ref.headDim,
+        nCtxTrain: ref.nCtxTrain,
+        nVocab: ref.nVocab,
+        sizeBytes: ref.sizeBytes,
+      );
+    } finally {
+      malloc.free(pathPtr);
+      calloc.free(out);
+    }
+  }
+
+  /// Number of tokens [text] occupies in this model's vocabulary. Plain text only.
+  int countTokens(String text) {
+    _ensureOpen();
+    final textPtr = text.toNativeUtf8();
+    try {
+      final n = LlmBindings.instance.countTokens(_session, textPtr);
+      if (n < 0) throw LlmException(_lastError(LlmBindings.instance));
+      return n;
+    } finally {
+      malloc.free(textPtr);
+    }
+  }
 
   void setThreads(int threads) {
     _ensureOpen();

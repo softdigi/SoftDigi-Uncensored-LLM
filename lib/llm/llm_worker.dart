@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'llm_engine.dart';
+import 'model_facts.dart';
 
 /// Why a generation finished.
 enum GenerationEnd { endOfTurn, maxTokens, stopped }
@@ -167,6 +168,18 @@ class LlmWorker {
     await _request({'cmd': 'unload'});
   }
 
+  /// Reads model metadata without loading weights. Safe to call while another model is loaded.
+  Future<ModelFacts> readModelFacts(String path) async {
+    final reply = await _request({'cmd': 'info', 'path': path});
+    return ModelFacts.fromJson((reply['facts'] as Map).cast<String, Object?>());
+  }
+
+  /// Token count of [text] under the loaded model's tokenizer.
+  Future<int> countTokens(String text) async {
+    final reply = await _request({'cmd': 'count', 'text': text});
+    return reply['tokens'] as int;
+  }
+
   Future<void> setThreads(int threads) async {
     await _request({'cmd': 'threads', 'n': threads});
   }
@@ -275,6 +288,20 @@ class _WorkerState {
           _stop(msg['id'] as int);
         case 'unload':
           _unloadThen(id);
+        case 'info':
+          final facts = LlmEngine.readModelFacts(msg['path'] as String);
+          _toMain.send({'type': 'ok', 'id': id, 'facts': facts.toJson()});
+        case 'count':
+          final engine = _engine;
+          if (engine == null) {
+            _error(id, 'no model loaded');
+          } else {
+            _toMain.send({
+              'type': 'ok',
+              'id': id,
+              'tokens': engine.countTokens(msg['text'] as String),
+            });
+          }
         case 'threads':
           _engine?.setThreads(msg['n'] as int);
           _ok(id);

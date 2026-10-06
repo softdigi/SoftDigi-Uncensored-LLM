@@ -1,14 +1,16 @@
 // extern "C" bridge consumed by Dart FFI. The ABI is documented in
 // native/include/llm_bridge.h.
 #include "llm_bridge.h"
+#include "gguf.h"
 #include "llama.h"
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <cstring>
 #include <mutex>
 #include <new>
-#include <string>
 #include <unistd.h>
 #include <vector>
 
@@ -34,6 +36,37 @@ int32_t fail(int32_t code, const char * msg) {
 void ensure_backend_init() {
     static std::once_flag once;
     std::call_once(once, [] { llama_backend_init(); });
+}
+
+// Frees a GGUF context when it goes out of scope.
+struct ModelInfoGuard {
+    gguf_context * gguf;
+    ~ModelInfoGuard() { gguf_free(gguf); }
+};
+
+// Reads an integer key. GGUF writers use u32, i32 or u64 for these fields.
+bool read_gguf_int(const gguf_context * gguf, const std::string & key, int32_t * out) {
+    const int64_t id = gguf_find_key(gguf, key.c_str());
+    if (id < 0) return false;
+    switch (gguf_get_kv_type(gguf, id)) {
+        case GGUF_TYPE_UINT32: *out = static_cast<int32_t>(gguf_get_val_u32(gguf, id)); return true;
+        case GGUF_TYPE_INT32:  *out = gguf_get_val_i32(gguf, id); return true;
+        case GGUF_TYPE_UINT64: *out = static_cast<int32_t>(gguf_get_val_u64(gguf, id)); return true;
+        default: return false;
+    }
+}
+
+// Size of the file in bytes, which is the weight data plus a small header. Returns 0 if unknown.
+uint64_t file_size_bytes(const char * path) {
+    FILE * f = std::fopen(path, "rb");
+    if (!f) return 0;
+    uint64_t size = 0;
+    if (std::fseek(f, 0, SEEK_END) == 0) {
+        const long end = std::ftell(f);
+        if (end > 0) size = static_cast<uint64_t>(end);
+    }
+    std::fclose(f);
+    return size;
 }
 
 }  // namespace
@@ -239,7 +272,6 @@ LLM_EXPORT int32_t llm_set_threads(llm_session * s, int32_t n_threads) {
     g_last_error.clear();
     return LLM_OK;
 }
-
 LLM_EXPORT int32_t llm_suggest_threads(void) {
     const long nproc = sysconf(_SC_NPROCESSORS_CONF);
     const int32_t cores = nproc > 0 ? static_cast<int32_t>(nproc) : kMaxThreads;
@@ -268,6 +300,89 @@ LLM_EXPORT int32_t llm_suggest_threads(void) {
     }
     if (perf < 1) perf = 1;
     return perf < kMaxThreads ? perf : kMaxThreads;
+}
+
+LLM_EXPORT int32_t llm_read_model_info(const char * model_path, llm_model_info * out) {
+    if (!model_path || !out) {
+        return fail(LLM_ERR_ARGS, "llm_read_model_info: invalid arguments");
+    }
+
+    // Reads the GGUF header and key-value table only. No weights are loaded and
+    // no tensor buffers are allocated.
+    gguf_init_params gparams{};
+    gparams.no_alloc = true;
+    gparams.ctx = nullptr;
+    gguf_context * gguf = gguf_init_from_file(model_path, gparams);
+    if (!gguf) {
+        return fail(LLM_ERR_LOAD, "not a readable GGUF file");
+    }
+    const ModelInfoGuard guard{gguf};
+
+    const int64_t arch_id = gguf_find_key(gguf, "general.architecture");
+    if (arch_id < 0 || gguf_get_kv_type(gguf, arch_id) != GGUF_TYPE_STRING) {
+        return fail(LLM_ERR_LOAD, "GGUF metadata lacks general.architecture");
+    }
+    const std::string arch = gguf_get_val_str(gguf, arch_id);
+    std::memset(out, 0, sizeof(*out));
+    std::snprintf(out->arch, sizeof(out->arch), "%s", arch.c_str());
+
+    int32_t n_layer = 0, n_head = 0, n_head_kv = 0, n_embd = 0, key_length = 0, n_ctx = 0;
+    if (!read_gguf_int(gguf, arch + ".block_count", &n_layer) ||
+        !read_gguf_int(gguf, arch + ".attention.head_count", &n_head) ||
+        !read_gguf_int(gguf, arch + ".embedding_length", &n_embd) ||
+        !read_gguf_int(gguf, arch + ".context_length", &n_ctx)) {
+        return fail(LLM_ERR_LOAD, "GGUF metadata lacks layer, head, embedding or context sizes");
+    }
+    // Models without grouped-query attention store no separate KV head count.
+    if (!read_gguf_int(gguf, arch + ".attention.head_count_kv", &n_head_kv)) {
+        n_head_kv = n_head;
+    }
+    // Some architectures store the per-head key size explicitly; otherwise it is n_embd / n_head.
+    if (!read_gguf_int(gguf, arch + ".attention.key_length", &key_length) || key_length <= 0) {
+        key_length = n_head > 0 ? n_embd / n_head : 0;
+    }
+
+    int32_t n_vocab = 0;
+    const int64_t tokens_id = gguf_find_key(gguf, "tokenizer.ggml.tokens");
+    if (tokens_id >= 0 && gguf_get_kv_type(gguf, tokens_id) == GGUF_TYPE_ARRAY) {
+        n_vocab = static_cast<int32_t>(gguf_get_arr_n(gguf, tokens_id));
+    } else {
+        read_gguf_int(gguf, arch + ".vocab_size", &n_vocab);
+    }
+
+    out->n_layer     = n_layer;
+    out->n_head      = n_head;
+    out->n_head_kv   = n_head_kv;
+    out->n_embd      = n_embd;
+    out->head_dim    = key_length;
+    out->n_ctx_train = n_ctx;
+    out->n_vocab     = n_vocab;
+    out->size_bytes  = file_size_bytes(model_path);
+
+    if (out->n_layer <= 0 || out->n_head <= 0 || out->n_head_kv <= 0 ||
+        out->head_dim <= 0 || out->n_ctx_train <= 0) {
+        return fail(LLM_ERR_LOAD, "GGUF metadata has non-positive model sizes");
+    }
+    g_last_error.clear();
+    return LLM_OK;
+}
+
+LLM_EXPORT int32_t llm_count_tokens(llm_session * s, const char * text) {
+    if (!s || !text) {
+        return fail(LLM_ERR_ARGS, "llm_count_tokens: invalid arguments");
+    }
+    const int32_t len = static_cast<int32_t>(std::strlen(text));
+    std::vector<llama_token> tokens(static_cast<size_t>(len) + 8);
+    int32_t n = llama_tokenize(s->vocab, text, len, tokens.data(),
+                               static_cast<int32_t>(tokens.size()), false, true);
+    if (n < 0) {
+        // Negative means the buffer was too small; -n is the required size.
+        tokens.resize(static_cast<size_t>(-n));
+        n = llama_tokenize(s->vocab, text, len, tokens.data(),
+                           static_cast<int32_t>(tokens.size()), false, true);
+    }
+    if (n < 0) return fail(LLM_ERR_TOKENIZE, "token count failed");
+    return n;
 }
 
 LLM_EXPORT int32_t llm_generated_count(llm_session * s) {

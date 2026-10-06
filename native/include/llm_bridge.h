@@ -26,6 +26,29 @@ extern "C" {
 
 typedef struct llm_session llm_session;
 
+// Architecture facts read from a GGUF file's metadata (no weights are loaded).
+typedef struct llm_model_info {
+    char     arch[32];        // general.architecture, e.g. "llama", "qwen2"
+    int32_t  n_layer;
+    int32_t  n_head;          // attention query heads
+    int32_t  n_head_kv;       // key/value heads (GQA)
+    int32_t  n_embd;
+    int32_t  head_dim;        // per-head key dimension
+    int32_t  n_ctx_train;     // context length the model was trained with
+    int32_t  n_vocab;
+    uint64_t size_bytes;      // tensor data size reported by llama.cpp
+} llm_model_info;
+
+// Reads model metadata from a GGUF file. Validates the file structure.
+// Returns LLM_OK or a negative error (llm_last_error() has the reason).
+int32_t llm_read_model_info(const char * model_path, llm_model_info * out);
+
+// Number of tokens in text, as the prompt tokenizer counts it: control tokens such as
+// <|eot_id|> count as one token and no BOS is added. Prompts built by chat_prompt.dart
+// escape user text first, so this matches what llm_begin evaluates (plus BOS).
+// Returns a negative error for a NULL session or failed tokenization.
+int32_t llm_count_tokens(llm_session * s, const char * text);
+
 // Static backend/system info string. Safe to call at any time.
 const char * llm_probe(void);
 
