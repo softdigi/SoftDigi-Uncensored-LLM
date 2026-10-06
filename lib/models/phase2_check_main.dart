@@ -24,13 +24,13 @@ import 'model_profile.dart';
 import 'model_runtime.dart';
 import 'thermal_policy.dart';
 
-/// The live free-RAM gate refused a load on this phone (needed 3230 MB, free 2831 MB), which
-/// shows the gate works. This run bypasses it so the remaining checks can run. Set to false
-/// to test with the real gate.
-const bool bypassLiveRamGateForTest = true;
+/// TEST-ONLY. Never true in production code. Leaves the live memory gate
+/// in place, but reports unlimited usable memory so a check can run on a
+/// crowded phone. Keep false for real measurements.
+const bool bypassLiveRamGateForTest = false;
 
 Future<int> checkRamProbe() async =>
-    bypassLiveRamGateForTest ? (1 << 40) : readAvailableRamBytes();
+    bypassLiveRamGateForTest ? (1 << 40) : readUsableRamBytes();
 
 void main() {
   runApp(const _CheckApp());
@@ -101,7 +101,7 @@ class _CheckLogState extends State<_CheckLog> {
     final manager = ModelManager(
       rootDir: Directory(filesDir),
       runtime: runtime,
-      availableRamBytes: checkRamProbe,
+      usableRamBytes: checkRamProbe,
       threads: 4,
     );
     try {
@@ -229,7 +229,7 @@ class _CheckLogState extends State<_CheckLog> {
       final restarted = ModelManager(
         rootDir: Directory(filesDir),
         runtime: runtime,
-        availableRamBytes: checkRamProbe,
+        usableRamBytes: checkRamProbe,
         threads: 4,
       )..init();
       _check(

@@ -4,6 +4,7 @@ import 'dart:math';
 import '../llm/model_facts.dart';
 import 'crash_marker.dart';
 import 'memory_estimator.dart';
+import 'memory_gate.dart';
 import 'model_profile.dart';
 import 'model_registry.dart';
 import 'model_runtime.dart';
@@ -48,7 +49,7 @@ class ModelManager {
   ModelManager({
     required this.rootDir,
     required this.runtime,
-    required this.availableRamBytes,
+    required this.usableRamBytes,
     required this.threads,
   }) : marker = CrashMarker(File('${rootDir.path}/models/loading.marker')),
        _registry = ModelRegistryStore(
@@ -59,7 +60,7 @@ class ModelManager {
   final ModelRuntime runtime;
 
   /// Returns the RAM the system reports as available right now, in bytes.
-  final Future<int> Function() availableRamBytes;
+  final Future<int> Function() usableRamBytes;
 
   /// Generation thread count to request when loading.
   final int threads;
@@ -213,12 +214,12 @@ class ModelManager {
     final context = min(max(wanted, MemoryPolicy.minContextTokens), maxCtx);
     final estimate = estimateMemory(model.facts, context);
 
-    final free = await availableRamBytes();
-    if (free < estimate.total) {
-      throw ModelManagerException(
-        'not enough free RAM now: need ${_mb(estimate.total)} MB, '
-        'free ${_mb(free)} MB. Close other apps and retry.',
-      );
+    final gate = MemoryGate.check(
+      usableBytes: await usableRamBytes(),
+      estimate: estimate,
+    );
+    if (!gate.allowed) {
+      throw ModelManagerException(gate.userMessage);
     }
 
     if (_active != null) {
@@ -259,8 +260,6 @@ class ModelManager {
     _active = null;
     _activeContext = null;
   }
-
-  static String _mb(int bytes) => (bytes / mib).toStringAsFixed(0);
 
   /// True if [file] begins with the GGUF magic bytes "GGUF".
   static Future<bool> hasGgufMagic(File file) async {

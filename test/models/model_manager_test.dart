@@ -17,7 +17,7 @@ void main() {
   ModelManager makeManager() => ModelManager(
     rootDir: root,
     runtime: runtime,
-    availableRamBytes: () async => freeRam,
+    usableRamBytes: () async => freeRam,
     threads: 4,
   );
 

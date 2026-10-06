@@ -29,7 +29,7 @@ void main() {
     final mgr = ModelManager(
       rootDir: root,
       runtime: runtime,
-      availableRamBytes: () async => 6 * 1024 * 1024 * 1024,
+      usableRamBytes: () async => 6 * 1024 * 1024 * 1024,
       threads: 4,
     )..init();
     await mgr.registerFile(
