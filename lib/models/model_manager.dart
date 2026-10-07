@@ -177,6 +177,14 @@ class ModelManager {
     _registry.write(_models);
   }
 
+  /// Changes what a model is used for (chat or coding). Takes effect at the next load.
+  void setProfile(String id, ModelProfile profile) {
+    final i = _models.indexWhere((m) => m.id == id);
+    if (i < 0) return;
+    _models[i] = _models[i].copyWith(profileId: profile.id);
+    _registry.write(_models);
+  }
+
   /// Clears a quarantine after the user has chosen to try the model again.
   void clearQuarantine(String id) {
     final i = _models.indexWhere((m) => m.id == id);

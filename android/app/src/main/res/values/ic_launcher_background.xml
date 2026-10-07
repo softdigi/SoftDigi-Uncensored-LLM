@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark navy from the SoftDigi AI logo. Used by the launch screen and the adaptive icon background. -->
+    <color name="softdigi_launch_background">#FF050A24</color>
+    <color name="ic_launcher_background">#FF050A24</color>
+</resources>

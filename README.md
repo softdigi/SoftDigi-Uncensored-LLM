@@ -1,4 +1,6 @@
-# soft_local_pai
+# SoftDigi AI
+
+SoftDigi AI, by SoftDigi Technology. Your AI. Your Device. Your Privacy.
 
 Flutter Android app with on-device LLM inference (llama.cpp via Dart FFI).
 Target device: arm64-v8a, Snapdragon 8 Gen 2 (SM8550), Android 8.0+ (minSdk 26).

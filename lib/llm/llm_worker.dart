@@ -180,6 +180,12 @@ class LlmWorker {
     return reply['tokens'] as int;
   }
 
+  /// Thread count suggested for this device. Asked of the worker so the UI isolate never calls FFI.
+  Future<int> suggestThreads() async {
+    final reply = await _request({'cmd': 'suggest'});
+    return reply['threads'] as int;
+  }
+
   Future<void> setThreads(int threads) async {
     await _request({'cmd': 'threads', 'n': threads});
   }
@@ -291,6 +297,12 @@ class _WorkerState {
         case 'info':
           final facts = LlmEngine.readModelFacts(msg['path'] as String);
           _toMain.send({'type': 'ok', 'id': id, 'facts': facts.toJson()});
+        case 'suggest':
+          _toMain.send({
+            'type': 'ok',
+            'id': id,
+            'threads': LlmEngine.suggestThreads(),
+          });
         case 'count':
           final engine = _engine;
           if (engine == null) {

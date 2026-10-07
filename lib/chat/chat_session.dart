@@ -30,6 +30,9 @@ class ChatSession {
 
   final List<ChatMessage> transcript = [];
 
+  /// Older messages left out of the last prompt to fit the context window.
+  int lastDroppedMessages = 0;
+
   /// Sends [text] and streams the reply. Applies the thermal policy first.
   /// The reply is appended to [transcript] when it finishes.
   Stream<LlmEvent> send(String text) async* {
@@ -55,6 +58,7 @@ class ChatSession {
     );
     final userMessage = ChatMessage(ChatRole.user, text);
     final fitted = await fitter.fit(transcript, userMessage);
+    lastDroppedMessages = fitted.droppedMessages;
 
     transcript.add(userMessage);
     final reply = StringBuffer();

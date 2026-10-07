@@ -44,11 +44,12 @@ class InstalledModel {
   bool get isQuarantined => quarantineReason != null;
 
   InstalledModel copyWith({
+    String? profileId,
     String? quarantineReason,
     bool clearQuarantine = false,
   }) => InstalledModel(
     id: id,
-    profileId: profileId,
+    profileId: profileId ?? this.profileId,
     displayName: displayName,
     fileName: fileName,
     sizeBytes: sizeBytes,
