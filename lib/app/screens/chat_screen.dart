@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/model_profile.dart';
+import '../../search/search_mode.dart';
+import '../../search/search_result.dart';
 import '../app_controller.dart';
 import '../widgets/common.dart';
 import 'chat_history_screen.dart';
@@ -80,6 +82,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _pickSearchMode(BuildContext context) async {
+    final mode = await chooseSearchMode(context, _c.searchMode);
+    if (mode != null) _c.setSearchMode(mode);
+  }
+
   void _openHistory() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -145,15 +152,23 @@ class _ChatScreenState extends State<ChatScreen> {
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(28),
               child: Padding(
-                padding: const EdgeInsets.only(left: 16, bottom: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _ModelIndicator(
-                    model: model?.displayName,
-                    profile: profile?.role,
-                    contextTokens: _c.loadedContextTokens,
-                    onTap: widget.onOpenModels,
-                  ),
+                padding: const EdgeInsets.only(left: 16, right: 8, bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ModelIndicator(
+                        model: model?.displayName,
+                        profile: profile?.role,
+                        contextTokens: _c.loadedContextTokens,
+                        onTap: widget.onOpenModels,
+                      ),
+                    ),
+                    _SearchModeIndicator(
+                      mode: _c.searchMode,
+                      configured: _c.webSearchConfigured,
+                      onTap: () => _pickSearchMode(context),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -189,11 +204,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     icon: Icons.lock_clock_outlined,
                     color: theme.colorScheme.secondary,
                   ),
+                if (_c.awaitingSearchPermission)
+                  _SearchPermissionBanner(
+                    query: _c.pendingSearchQuery ?? '',
+                    onAllow: () => _c.respondToSearchPrompt(true),
+                    onCancel: () => _c.respondToSearchPrompt(false),
+                  ),
                 Expanded(child: _messageArea(context)),
                 _InputBar(
                   controller: _input,
                   generating: _c.generating,
-                  enabled: _c.canChat && !_c.busy,
+                  enabled:
+                      _c.canChat && !_c.busy && !_c.awaitingSearchPermission,
                   onSend: _send,
                   onStop: _c.stopGeneration,
                   hint: _c.canChat
@@ -272,6 +294,111 @@ class _ModelIndicator extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows whether the network is reachable at all in the current mode: 🔒
+/// Local Only (never), or 🌐 (possible, gated by the mode's own rules).
+class _SearchModeIndicator extends StatelessWidget {
+  const _SearchModeIndicator({
+    required this.mode,
+    required this.configured,
+    required this.onTap,
+  });
+
+  final SearchMode mode;
+  final bool configured;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final networkCapable = mode != SearchMode.localOnly;
+    final label = !configured
+        ? 'Web Search not set up'
+        : searchModeLabel(mode);
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                networkCapable && configured
+                    ? Icons.public
+                    : Icons.lock_outline,
+                size: 15,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                networkCapable && configured ? 'Web' : 'Local',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "🌐 Web Search is needed for current information. Allow?" prompt. No
+/// network request happens until the user taps Allow.
+class _SearchPermissionBanner extends StatelessWidget {
+  const _SearchPermissionBanner({
+    required this.query,
+    required this.onAllow,
+    required this.onCancel,
+  });
+
+  final String query;
+  final VoidCallback onAllow;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Material(
+        color: scheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.public, color: scheme.onTertiaryContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Web Search is needed for current information. Allow?',
+                      style: TextStyle(color: scheme.onTertiaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                  const SizedBox(width: 8),
+                  FilledButton(onPressed: onAllow, child: const Text('Allow')),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -391,6 +518,10 @@ class _Bubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 content,
+                if (message.sources.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _SourcesList(sources: message.sources),
+                ],
                 if (message.error != null) ...[
                   const SizedBox(height: 8),
                   Row(
@@ -412,6 +543,47 @@ class _Bubble extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The sources a reply used, shown under the bubble. Tapping does nothing
+/// yet — URLs are shown as plain text, not launched, so the app never needs
+/// a url_launcher dependency or leaves the chat screen.
+class _SourcesList extends StatelessWidget {
+  const _SourcesList({required this.sources});
+
+  final List<SearchResult> sources;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.public, size: 13, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(
+              'Sources',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        for (final s in sources)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              '${s.title}\n${s.url}',
+              style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+            ),
+          ),
+      ],
     );
   }
 }

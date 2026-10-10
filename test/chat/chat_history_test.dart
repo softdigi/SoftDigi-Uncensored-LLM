@@ -10,8 +10,10 @@ import 'package:soft_local_pai/llm/llm_worker.dart';
 import 'package:soft_local_pai/models/model_importer.dart';
 import 'package:soft_local_pai/models/model_manager.dart';
 import 'package:soft_local_pai/models/model_profile.dart';
+import 'package:soft_local_pai/search/search_settings_store.dart';
 
 import '../models/fake_runtime.dart';
+import '../search/fake_web_search_service.dart';
 
 /// A runtime whose reply waits until the test calls [finish] or [stop].
 /// Used to check a stopped reply keeps its partial text.
@@ -82,6 +84,8 @@ void main() {
     await m.registerFile(fileName: file, displayName: name, profile: profile);
   }
 
+  var settingsFileCount = 0;
+
   AppController controllerFor(ModelManager m, ChatStore s, [FakeRuntime? rt]) =>
       AppController(
         manager: m,
@@ -89,6 +93,10 @@ void main() {
         importer: ModelImporter(),
         store: s,
         suggestedThreads: 4,
+        webSearch: FakeWebSearchService(configured: false),
+        searchSettingsStore: SearchSettingsStore(
+          File('${root.path}/search_settings_${settingsFileCount++}.json'),
+        ),
       );
 
   group('ChatStore', () {

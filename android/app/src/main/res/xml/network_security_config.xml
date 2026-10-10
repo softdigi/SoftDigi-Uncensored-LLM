@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Defense in depth: no cleartext (plain HTTP) traffic anywhere in this app,
+     even though the target SDK already blocks it by default. The only network
+     call this app ever makes is to a self-hosted SearXNG endpoint, which must
+     be HTTPS (enforced again in lib/search/searxng_client.dart). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

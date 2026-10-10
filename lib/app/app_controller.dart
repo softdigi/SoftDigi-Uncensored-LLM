@@ -12,6 +12,12 @@ import '../models/model_profile.dart';
 import '../models/model_registry.dart';
 import '../models/model_runtime.dart';
 import '../models/thermal_policy.dart';
+import '../search/content_extractor.dart';
+import '../search/search_decision.dart';
+import '../search/search_mode.dart';
+import '../search/search_result.dart';
+import '../search/search_settings_store.dart';
+import '../search/web_search_service.dart';
 
 /// One message shown in the chat list.
 class ChatBubble {
@@ -23,6 +29,10 @@ class ChatBubble {
 
   /// Set when generating this reply failed. The bubble shows the reason.
   String? error;
+
+  /// Web sources used for this reply, if Web Search was used. Always empty
+  /// for user messages and for replies answered locally.
+  List<SearchResult> sources = const [];
 }
 
 /// Whether the open conversation can accept a new message.
@@ -52,12 +62,19 @@ class AppController extends ChangeNotifier {
     required this.importer,
     required this.store,
     required this.suggestedThreads,
-  });
+    required this.webSearch,
+    required this.searchSettingsStore,
+  }) : _searchMode = searchSettingsStore.read();
 
   final ModelManager manager;
   final ModelRuntime runtime;
   final ModelImporter importer;
   final ChatStore store;
+
+  /// The only network client in the app. Talks to a self-hosted SearXNG
+  /// endpoint only — never a cloud LLM, never a paid search API.
+  final WebSearchService webSearch;
+  final SearchSettingsStore searchSettingsStore;
 
   /// Thread count from the worker, read once at startup.
   final int suggestedThreads;
@@ -75,11 +92,43 @@ class AppController extends ChangeNotifier {
   String? _errorMessage;
   String? _notice;
 
+  SearchMode _searchMode;
+  String? _pendingSearchQuery;
+  bool _awaitingSearchPermission = false;
+
   bool get busy => _busy;
   bool get generating => _generating;
   String? get busyMessage => _busyMessage;
   String? get errorMessage => _errorMessage;
   String? get notice => _notice;
+
+  /// How much network access the user has allowed. Never changes what the
+  /// model is; only whether [send] may ever call [webSearch].
+  SearchMode get searchMode => _searchMode;
+
+  /// True only when an endpoint was configured at build time. Until then,
+  /// Web Search stays unavailable in every mode — there is no default
+  /// endpoint in source.
+  bool get webSearchConfigured => webSearch.isConfigured;
+
+  /// True while [send] is waiting on the user's Allow/Cancel answer for
+  /// [pendingSearchQuery]. No network request has been made yet.
+  bool get awaitingSearchPermission => _awaitingSearchPermission;
+
+  /// The message [send] is waiting for permission to search for, or null.
+  String? get pendingSearchQuery => _pendingSearchQuery;
+
+  /// False only in Local Only mode, where the network is never touched.
+  /// Drives the 🔒/🌐 indicator in the UI — it reflects what is *possible*
+  /// in the current mode, not whether a search is happening right now.
+  bool get networkCapable => _searchMode != SearchMode.localOnly;
+
+  void setSearchMode(SearchMode mode) {
+    if (mode == _searchMode) return;
+    _searchMode = mode;
+    searchSettingsStore.write(mode);
+    notifyListeners();
+  }
 
   List<InstalledModel> get models => manager.models;
   bool get hasModels => manager.models.isNotEmpty;
@@ -171,7 +220,9 @@ class AppController extends ChangeNotifier {
       ..addAll([
         if (c != null)
           for (final m in c.messages)
-            ChatBubble(isUser: m.isUser, text: m.text)..error = m.error,
+            ChatBubble(isUser: m.isUser, text: m.text)
+              ..error = m.error
+              ..sources = m.sources,
       ]);
   }
 
@@ -278,6 +329,8 @@ class AppController extends ChangeNotifier {
   /// Starts a new chat with the loaded model. Earlier chats stay in history.
   void newChat() {
     if (_generating) return _fail('Stop the reply before starting a new chat.');
+    _pendingSearchQuery = null;
+    _awaitingSearchPermission = false;
     _current = null;
     messages.clear();
     final profile = loadedProfile;
@@ -294,6 +347,8 @@ class AppController extends ChangeNotifier {
     if (_generating) {
       return _fail('Stop the reply before opening another chat.');
     }
+    _pendingSearchQuery = null;
+    _awaitingSearchPermission = false;
     final c = store.get(id);
     if (c == null) return _fail('That chat could not be opened.');
     _current = c;
@@ -354,30 +409,108 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Call after something outside this controller changed `manager`'s models
+  /// — currently only the Download Center, which registers a model directly
+  /// through [manager] without going through [importModel]. Forces listeners
+  /// (the Models tab) to re-read the now-current list.
+  void refreshModels() => notifyListeners();
+
   void clearQuarantine(String id) {
     manager.clearQuarantine(id);
     notifyListeners();
   }
 
-  /// Sends [raw] and streams the reply into the chat. Both messages are saved locally
-  /// when the reply ends, including when it is stopped.
-  Future<void> send(String raw) async {
-    final text = raw.trim();
-    if (text.isEmpty || _generating || _busy) return;
-    final session = _session;
-    final model = loadedModel;
+  /// Checks the open conversation can accept a message, failing with a
+  /// user-facing reason otherwise.
+  bool _readyToSend() {
     if (access == ChatAccess.needsLoad) {
-      return _fail(
-        'Load ${requiredModelName ?? 'the model'} to continue this chat.',
-      );
+      _fail('Load ${requiredModelName ?? 'the model'} to continue this chat.');
+      return false;
     }
     if (access == ChatAccess.modelMissing) {
-      return _fail(
+      _fail(
         'The model for this chat is no longer installed. Start a new chat to continue.',
       );
+      return false;
     }
+    if (_session == null || loadedModel == null) {
+      _fail('Load a model to start chatting.');
+      return false;
+    }
+    return true;
+  }
+
+  /// True when [text] looks like it needs current information, Web Search is
+  /// possible in the current mode, and an endpoint is actually configured.
+  bool _wantsWebSearch(String text) =>
+      _searchMode != SearchMode.localOnly &&
+      webSearch.isConfigured &&
+      SearchDecision.needsWebSearch(text);
+
+  /// Sends [raw] and streams the reply into the chat. Both messages are saved locally
+  /// when the reply ends, including when it is stopped.
+  ///
+  /// In Smart mode, a message that looks like it needs current information
+  /// does not generate immediately: [awaitingSearchPermission] becomes true
+  /// and this returns. Call [respondToSearchPrompt] to continue. No network
+  /// request happens until the user allows it.
+  Future<void> send(String raw) async {
+    final text = raw.trim();
+    if (text.isEmpty || _generating || _busy || _awaitingSearchPermission) {
+      return;
+    }
+    if (!_readyToSend()) return;
+
+    if (_wantsWebSearch(text)) {
+      if (_searchMode == SearchMode.smart) {
+        _pendingSearchQuery = text;
+        _awaitingSearchPermission = true;
+        notifyListeners();
+        return;
+      }
+      // SearchMode.webSearchAllowed: standing permission, search without asking.
+      await _runTurn(text, searchQuery: text);
+      return;
+    }
+    await _runTurn(text);
+  }
+
+  /// Answers the Allow/Cancel prompt raised by [send] in Smart mode. Allowing
+  /// searches the web for [pendingSearchQuery]; cancelling answers locally
+  /// and says current information could not be verified. No-op if nothing is
+  /// pending.
+  Future<void> respondToSearchPrompt(bool allow) async {
+    if (!_awaitingSearchPermission || _generating || _busy) return;
+    final query = _pendingSearchQuery;
+    if (query == null) return;
+    _pendingSearchQuery = null;
+    _awaitingSearchPermission = false;
+    notifyListeners();
+    if (!_readyToSend()) return;
+    await _runTurn(query, searchQuery: allow ? query : null, searchDeclined: !allow);
+  }
+
+  /// The hint given to the model when a search was attempted but failed, for
+  /// any reason. Never shown to the user as-is; it only shapes the reply.
+  String _searchFailedPrompt(String text, String reason) =>
+      '$text\n\n(Web search was attempted but failed: $reason. Answer from '
+      'what you already know, and clearly say that current web information '
+      'could not be verified if the answer depends on it.)';
+
+  /// Runs one turn: saves the user's (unmodified) message, searches the web
+  /// first when [searchQuery] is set, then generates and saves the reply.
+  /// [searchDeclined] only changes the hint given to the model, never what is
+  /// shown to or saved for the user.
+  Future<void> _runTurn(
+    String text, {
+    String? searchQuery,
+    bool searchDeclined = false,
+  }) async {
+    final session = _session;
+    final model = loadedModel;
     if (session == null || model == null) {
-      return _fail('Load a model to start chatting.');
+      _fail('Load a model to start chatting.');
+      return;
     }
 
     _errorMessage = null;
@@ -403,6 +536,38 @@ class AppController extends ChangeNotifier {
     _generating = true;
     notifyListeners();
 
+    var promptText = text;
+    var sources = const <SearchResult>[];
+    if (searchQuery != null) {
+      _setBusy('Searching the web…');
+      const extractor = ContentExtractor();
+      try {
+        final raw = await webSearch.search(searchQuery);
+        sources = extractor.clean(raw);
+        final block = extractor.buildContextBlock(searchQuery, sources);
+        promptText = '$block\n\nUser question: $text';
+      } on WebSearchException catch (e) {
+        promptText = _searchFailedPrompt(text, e.message);
+        _notice = 'Web search failed: ${e.message} Answering from what the model already knows.';
+      } catch (e, st) {
+        // Defense in depth: an unexpected error here (a malformed response
+        // the parser did not anticipate, a future WebSearchService
+        // implementation bug, ...) must never leave the chat stuck mid-send
+        // with _generating permanently true. Fall back exactly like a known
+        // WebSearchException would.
+        debugPrint('web search failed unexpectedly: $e\n$st');
+        promptText = _searchFailedPrompt(text, 'an unexpected error occurred');
+        _notice = 'Web search failed. Answering from what the model already knows.';
+      } finally {
+        _clearBusy();
+      }
+    } else if (searchDeclined) {
+      promptText =
+          '$text\n\n(Web search was not used for this reply. Answer from what '
+          'you already know, and clearly say that current web information '
+          'could not be verified if the answer depends on it.)';
+    }
+
     try {
       final level = thermalLevelFromCode(await importer.thermalStatusCode());
       final decision = decideThermal(
@@ -415,7 +580,7 @@ class AppController extends ChangeNotifier {
         notifyListeners();
       }
 
-      await for (final event in session.send(text)) {
+      await for (final event in session.send(promptText)) {
         if (event is LlmToken) {
           reply.text += event.text;
           notifyListeners();
@@ -439,6 +604,7 @@ class AppController extends ChangeNotifier {
       reply.error = 'Something went wrong. Please try again.';
     } finally {
       reply.streaming = false;
+      reply.sources = sources;
       _saveReply(reply);
       _generating = false;
       notifyListeners();
@@ -457,6 +623,7 @@ class AppController extends ChangeNotifier {
         text: reply.text,
         createdAt: now,
         error: reply.error,
+        sources: reply.sources,
       ),
     );
     c.updatedAt = now;

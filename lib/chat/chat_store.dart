@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../search/search_result.dart';
+
 /// One message saved in a conversation.
 class StoredMessage {
   const StoredMessage({
@@ -8,6 +10,7 @@ class StoredMessage {
     required this.text,
     required this.createdAt,
     this.error,
+    this.sources = const [],
   });
 
   factory StoredMessage.fromJson(Map<String, Object?> json) => StoredMessage(
@@ -15,6 +18,10 @@ class StoredMessage {
     text: json['text'] as String,
     createdAt: DateTime.parse(json['createdAt'] as String),
     error: json['error'] as String?,
+    sources: [
+      for (final s in (json['sources'] as List<Object?>? ?? const []))
+        SearchResult.fromJson((s as Map).cast<String, Object?>()),
+    ],
   );
 
   final bool isUser;
@@ -24,11 +31,16 @@ class StoredMessage {
   /// Set when the reply failed. The partial text, if any, is still kept.
   final String? error;
 
+  /// Web sources used for this reply, if any. Always empty for replies that
+  /// were answered locally, and for every user message.
+  final List<SearchResult> sources;
+
   Map<String, Object?> toJson() => {
     'role': isUser ? 'user' : 'assistant',
     'text': text,
     'createdAt': createdAt.toIso8601String(),
     if (error != null) 'error': error,
+    if (sources.isNotEmpty) 'sources': [for (final s in sources) s.toJson()],
   };
 }
 

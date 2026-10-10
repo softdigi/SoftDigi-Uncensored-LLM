@@ -40,6 +40,14 @@ class ModelImporter {
     return dir;
   }
 
+  /// Free space, in bytes, on the filesystem containing [path]. Used by the
+  /// Download Center to refuse a download before it would run out of room.
+  Future<int> freeBytes(String path) async {
+    final bytes = await _paths.invokeMethod<int>('freeBytes', {'path': path});
+    if (bytes == null) throw StateError('free space unavailable');
+    return bytes;
+  }
+
   /// Thermal status code (0 = none ... 6 = shutdown). Returns 0 if unavailable.
   Future<int> thermalStatusCode() async {
     try {

@@ -37,6 +37,16 @@ class MainActivity : FlutterActivity() {
                 }
                 // Private app storage. Models live under <filesDir>/models.
                 "filesDir" -> result.success(filesDir.absolutePath)
+                // Free space on the filesystem containing the given path, for the
+                // Download Center's storage check before a model download starts.
+                "freeBytes" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("args", "path is required", null)
+                    } else {
+                        result.success(android.os.StatFs(path).availableBytes)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

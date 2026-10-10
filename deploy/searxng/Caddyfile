@@ -1,0 +1,32 @@
+# Reverse proxy for the self-hosted SearXNG instance. Caddy gets an HTTPS
+# certificate for this domain automatically (Let's Encrypt) — replace the
+# domain below with the real one SoftDigi Technology controls.
+#
+# Only the JSON search endpoint the app needs is exposed on a normal path;
+# everything still goes through SearXNG's own UI/API as usual, since the app
+# only ever calls GET /search?format=json&q=....
+
+search.softdigi.example {
+	encode gzip
+
+	# Abuse protection: SearXNG's own limiter (enabled in
+	# searxng-config/settings.yml -> server.limiter) is the primary defense
+	# against scraping/bot traffic and needs no extra plugin. For IP-based
+	# rate limiting at this layer too, build Caddy with the community
+	# caddy-ratelimit plugin (https://github.com/mholt/caddy-ratelimit) via
+	# xcaddy and add its `rate_limit` directive here — stock caddy:2-alpine
+	# does not include it, so do not add that directive without the custom
+	# build or Caddy will fail to start.
+
+	reverse_proxy searxng:8080 {
+		header_up X-Forwarded-Port 443
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}

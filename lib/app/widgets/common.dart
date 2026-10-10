@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/memory_estimator.dart';
 import '../../models/model_profile.dart';
 import '../../models/model_registry.dart';
+import '../../search/search_mode.dart';
 
 /// Asks whether a model is for chat or for coding. Returns null if dismissed.
 Future<ModelProfile?> chooseModelUse(BuildContext context) {
@@ -41,27 +42,96 @@ Future<ModelProfile?> chooseModelUse(BuildContext context) {
   );
 }
 
+/// Asks how much network access Web Search may use. Returns null if dismissed.
+Future<SearchMode?> chooseSearchMode(
+  BuildContext context,
+  SearchMode current,
+) {
+  return showModalBottomSheet<SearchMode>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Web Search',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Your conversations and AI reasoning stay on your device. '
+              'Web Search is used only when you allow it.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _UseOption(
+              icon: Icons.lock_outline,
+              title: 'Local Only',
+              subtitle: 'Never access the network, ever.',
+              selected: current == SearchMode.localOnly,
+              onTap: () => Navigator.pop(context, SearchMode.localOnly),
+            ),
+            const SizedBox(height: 8),
+            _UseOption(
+              icon: Icons.public,
+              title: 'Smart (default)',
+              subtitle: 'Ask before any web search.',
+              selected: current == SearchMode.smart,
+              onTap: () => Navigator.pop(context, SearchMode.smart),
+            ),
+            const SizedBox(height: 8),
+            _UseOption(
+              icon: Icons.public,
+              title: 'Web Search Allowed',
+              subtitle: 'Search automatically when it looks useful. Reasoning still stays on this device.',
+              selected: current == SearchMode.webSearchAllowed,
+              onTap: () => Navigator.pop(context, SearchMode.webSearchAllowed),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _UseOption extends StatelessWidget {
   const _UseOption({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.selected = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
+      shape: selected
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: scheme.primary, width: 1.5),
+            )
+          : null,
       child: ListTile(
         leading: Icon(icon),
         title: Text(title),
         subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: selected
+            ? Icon(Icons.check_circle, color: scheme.primary)
+            : const Icon(Icons.chevron_right),
         onTap: onTap,
       ),
     );

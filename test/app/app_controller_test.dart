@@ -7,8 +7,10 @@ import 'package:soft_local_pai/app/app_controller.dart';
 import 'package:soft_local_pai/models/model_importer.dart';
 import 'package:soft_local_pai/models/model_manager.dart';
 import 'package:soft_local_pai/models/model_profile.dart';
+import 'package:soft_local_pai/search/search_settings_store.dart';
 
 import '../models/fake_runtime.dart';
+import '../search/fake_web_search_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +44,10 @@ void main() {
       importer: ModelImporter(),
       store: ChatStore(Directory('${root.path}/chats')),
       suggestedThreads: 4,
+      webSearch: FakeWebSearchService(configured: false),
+      searchSettingsStore: SearchSettingsStore(
+        File('${root.path}/search_settings.json'),
+      ),
     );
   });
 
@@ -115,6 +121,10 @@ void main() {
         importer: ModelImporter(),
         store: ChatStore(Directory('${root.path}/chats')),
         suggestedThreads: 4,
+        webSearch: FakeWebSearchService(configured: false),
+        searchSettingsStore: SearchSettingsStore(
+          File('${root.path}/search_settings_2.json'),
+        ),
       );
       await controller.loadModel(_idOf(manager));
       expect(controller.loadedModel, isNull);

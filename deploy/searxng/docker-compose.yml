@@ -1,0 +1,70 @@
+# Self-hosted SearXNG for SoftDigi AI's Web Search feature.
+#
+# This is infrastructure for SoftDigi Technology's own server — it has no
+# effect on the Flutter app by itself. Deploy it, then point the app at it
+# with:
+#
+#   flutter build apk --release \
+#     --dart-define=SEARXNG_ENDPOINT=https://search.softdigi.example/search
+#
+# No paid search API, no API key, no per-query billing: SearXNG aggregates
+# public search engines itself. redis is SearXNG's own request-rate cache,
+# not a third-party service.
+#
+# Review and test this before going live — it has not been deployed or
+# exercised against real traffic.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: softdigi-searxng-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - searxng
+
+  redis:
+    image: valkey/valkey:8-alpine
+    container_name: softdigi-searxng-redis
+    restart: unless-stopped
+    command: valkey-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: softdigi-searxng
+    restart: unless-stopped
+    # Not reachable from outside this host directly — only Caddy, over the
+    # docker network, ever talks to this container.
+    expose:
+      - "8080"
+    environment:
+      - SEARXNG_BASE_URL=https://search.softdigi.example/
+      - SEARXNG_REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./searxng-config:/etc/searxng:rw
+    depends_on:
+      - redis
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy-data:
+  caddy-config:
+  redis-data:

@@ -1,0 +1,77 @@
+# SearXNG settings for SoftDigi AI's Web Search backend.
+#
+# Mounted read-write into the container at /etc/searxng/settings.yml — on
+# first boot SearXNG also writes a generated `secret_key` into a copy of
+# this file if one isn't set. Generate one yourself instead and put it
+# below: `openssl rand -hex 32`. This key is SearXNG's own session/CSRF
+# secret; it is not a third-party API key and nothing outside this server
+# ever sees it.
+
+use_default_settings: true
+
+general:
+  instance_name: "SoftDigi AI Search"
+  # No telemetry/usage stats sent anywhere.
+  enable_metrics: false
+
+server:
+  # Generate your own: openssl rand -hex 32
+  secret_key: "CHANGE_ME_GENERATE_WITH_openssl_rand_-hex_32"
+  base_url: "https://search.softdigi.example/"
+  port: 8080
+  bind_address: "0.0.0.0"
+  # SearXNG's own abuse/bot protection — rate-limits by client, no extra
+  # plugin needed.
+  #
+  # UNVERIFIED RISK, check this during live deployment testing: SearXNG's
+  # limiter/botdetection has, in some versions, been reported to apply
+  # stricter heuristics to format=json requests than to the normal HTML UI,
+  # since JSON is the format most often abused by scrapers. Each phone
+  # running SoftDigi AI calls this endpoint directly from its own IP (there
+  # is no shared backend relay to allowlist), so if real devices start
+  # getting blocked or rate-limited while a browser hitting the same URL
+  # works fine, that is the limiter's bot heuristics, not a bug in the app.
+  # Mitigations to try, in order of preference: tune the botdetection config
+  # to be less aggressive for format=json, or (last resort, weakens abuse
+  # protection) set this to false and rely on the Caddy-layer rate limiting
+  # described in ../Caddyfile instead.
+  limiter: true
+  # This instance is for the SoftDigi AI app's own JSON queries, not a
+  # public search portal.
+  public_instance: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  # html is the normal browser UI; json is what the Flutter app's
+  # SearxngWebSearchService calls (format=json). Nothing else is enabled.
+  formats:
+    - html
+    - json
+
+redis:
+  url: redis://redis:6379/0
+
+# Keep the engine list to generally reliable, no-API-key-required public
+# search engines. Review and adjust for your region/needs; every engine
+# listed here is free to query and requires no account or paid key.
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false

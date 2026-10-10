@@ -10,6 +10,9 @@ import 'models/device_memory.dart';
 import 'models/model_importer.dart';
 import 'models/model_manager.dart';
 import 'models/model_runtime.dart';
+import 'search/search_config.dart';
+import 'search/search_settings_store.dart';
+import 'search/web_search_service.dart';
 
 /// SoftDigi AI. Production entry point.
 ///
@@ -38,6 +41,12 @@ Future<void> main() async {
     importer: importer,
     store: ChatStore(Directory('$filesDir/chats')),
     suggestedThreads: threads,
+    // Self-hosted SearXNG only, no API key, no cloud LLM. Unset by default;
+    // see lib/search/search_config.dart for how to set it at build time.
+    webSearch: SearxngWebSearchService(endpoint: searxngEndpointFromBuild),
+    searchSettingsStore: SearchSettingsStore(
+      File('$filesDir/search_settings.json'),
+    ),
   );
 
   runApp(SoftLocalPaiApp(controller: controller));

@@ -9,8 +9,10 @@ import 'package:soft_local_pai/app/soft_local_pai_app.dart';
 import 'package:soft_local_pai/models/model_importer.dart';
 import 'package:soft_local_pai/models/model_manager.dart';
 import 'package:soft_local_pai/models/model_profile.dart';
+import 'package:soft_local_pai/search/search_settings_store.dart';
 
 import 'models/fake_runtime.dart';
+import 'search/fake_web_search_service.dart';
 
 void main() {
   late Directory root;
@@ -23,12 +25,18 @@ void main() {
 
   tearDown(() => root.deleteSync(recursive: true));
 
+  var settingsFileCount = 0;
+
   AppController controllerFor(ModelManager manager) => AppController(
     manager: manager,
     runtime: runtime,
     importer: ModelImporter(),
     store: ChatStore(Directory('${root.path}/chats')),
     suggestedThreads: 4,
+    webSearch: FakeWebSearchService(configured: false),
+    searchSettingsStore: SearchSettingsStore(
+      File('${root.path}/search_settings_${settingsFileCount++}.json'),
+    ),
   );
 
   ModelManager managerFor() => ModelManager(

@@ -5,6 +5,7 @@ import '../../models/model_profile.dart';
 import '../../models/model_registry.dart';
 import '../app_controller.dart';
 import '../widgets/common.dart';
+import 'model_download_screen.dart';
 
 /// Installed models: import, load, unload, switch, change use, details and delete.
 class ModelsScreen extends StatelessWidget {
@@ -52,7 +53,27 @@ class ModelsScreen extends StatelessWidget {
       builder: (context, _) {
         final models = controller.models;
         return Scaffold(
-          appBar: AppBar(title: const Text('Models')),
+          appBar: AppBar(
+            title: const Text('Models'),
+            actions: [
+              IconButton(
+                tooltip: 'Download AI Models',
+                icon: const Icon(Icons.storefront_outlined),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => ModelDownloadScreen(
+                        manager: controller.manager,
+                        importer: controller.importer,
+                      ),
+                    ),
+                  );
+                  controller.refreshModels();
+                },
+              ),
+            ],
+          ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: controller.busy ? null : () => _import(context),
             icon: const Icon(Icons.file_open_outlined),

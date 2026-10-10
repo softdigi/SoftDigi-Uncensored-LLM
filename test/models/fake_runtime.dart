@@ -25,6 +25,10 @@ class FakeRuntime implements ModelRuntime {
   bool failLoad = false;
   int countPerCharDivisor = 4;
 
+  /// The exact prompt text the last [generate] call received, for tests that
+  /// need to see what actually reached the model.
+  String? lastPrompt;
+
   @override
   Future<ModelFacts> readFacts(String path) async {
     calls.add('readFacts');
@@ -65,6 +69,7 @@ class FakeRuntime implements ModelRuntime {
     int seed = 1234,
   }) async* {
     calls.add('generate');
+    lastPrompt = prompt;
     yield const LlmToken('hi');
     yield const LlmDone(
       GenerationStats(

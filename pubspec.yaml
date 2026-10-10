@@ -38,6 +38,13 @@ dependencies:
   # malloc/toNativeUtf8 helpers for the llm_bridge FFI layer (lib/llm).
   ffi: ^2.1.5
 
+  # HTTP client for the self-hosted SearXNG web-search endpoint (lib/search).
+  http: ^1.2.2
+
+  # sha256 verification of downloaded GGUF files (lib/download). Maintained by
+  # the Dart team; pure Dart, no transitive dependencies of its own.
+  crypto: ^3.0.6
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

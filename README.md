@@ -62,3 +62,22 @@ adb shell "cd /data/local/tmp/llm && ./llm_bridge_smoke model.gguf '<prompt>' 64
 flutter test test/llm
 flutter run -t lib/llm/llm_smoke_main.dart   # on-device inference check (not the app UI)
 ```
+
+## Web Search
+
+Off by default: the app ships with no search endpoint, no API key, and no
+cloud LLM anywhere. All reasoning always happens in the on-device GGUF
+model; Web Search only ever fetches search results from a self-hosted
+SearXNG instance SoftDigi Technology controls, and only when the user
+allows it (see `lib/search/`).
+
+To enable it in a build, pass the self-hosted endpoint at build time —
+never commit a real one into source:
+
+```sh
+flutter build apk --release \
+  --dart-define=SEARXNG_ENDPOINT=https://search.softdigi.example/search
+```
+
+Deployment config for that SearXNG instance is in `deploy/searxng/` (not
+part of the app; infrastructure for SoftDigi's own server).
