@@ -1,4 +1,4 @@
-# SoftDigi AI
+﻿# SoftDigi AI
 
 SoftDigi AI, by SoftDigi Technology. Your AI. Your Device. Your Privacy.
 
@@ -8,7 +8,7 @@ Target device: arm64-v8a, Snapdragon 8 Gen 2 (SM8550), Android 8.0+ (minSdk 26).
 ## Clone and build
 
 ```sh
-git clone <repo-url> softlocalpai
+git clone https://github.com/softdigi/SoftDigi-Uncensored-LLM.git softlocalpai
 cd softlocalpai
 git submodule update --init --recursive   # native/third_party/llama.cpp
 flutter pub get
@@ -71,7 +71,7 @@ model; Web Search only ever fetches search results from a self-hosted
 SearXNG instance SoftDigi Technology controls, and only when the user
 allows it (see `lib/search/`).
 
-To enable it in a build, pass the self-hosted endpoint at build time —
+To enable it in a build, pass the self-hosted endpoint at build time â€”
 never commit a real one into source:
 
 ```sh
@@ -81,3 +81,4 @@ flutter build apk --release \
 
 Deployment config for that SearXNG instance is in `deploy/searxng/` (not
 part of the app; infrastructure for SoftDigi's own server).
+
